@@ -1,8 +1,9 @@
+import asyncio
 import functools
 import hashlib
 import json
 from pathlib import Path
-from typing import Callable, TypeVar, Any
+from typing import Callable, TypeVar, Any, Awaitable
 
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -15,20 +16,16 @@ def _hash(text: str) -> str:
 
 def disk_cache(func: F) -> F:
     """
-    Decorator that caches a function's output based on its first string argument.
-    Works for both standalone functions and instance methods.
+    Decorator that caches sync or async method/function output based on its first string argument.
     """
     @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        # If called as a method, args[0] is self, args[1] is the text argument
-        # If called as a function, args[0] is the text argument
+    def sync_wrapper(*args, **kwargs):
+        # Support both methods (self, chunk, ...) and functions (chunk, ...)
         if len(args) == 0:
             raise ValueError("No arguments provided to the cached function.")
         if hasattr(args[0], "__class__") and len(args) > 1:
-            # method: first arg is self, second is text
             text_arg = args[1]
         else:
-            # function: first arg is text
             text_arg = args[0]
         cache_file = CACHE_DIR / f"{_hash(text_arg)}.json"
         if cache_file.exists():
@@ -36,4 +33,24 @@ def disk_cache(func: F) -> F:
         result = func(*args, **kwargs)
         cache_file.write_text(json.dumps(result), encoding="utf-8")
         return result
-    return wrapper  # type: ignore
+
+    @functools.wraps(func)
+    async def async_wrapper(*args, **kwargs):
+        # Support async methods/functions
+        if len(args) == 0:
+            raise ValueError("No arguments provided to the cached function.")
+        if hasattr(args[0], "__class__") and len(args) > 1:
+            text_arg = args[1]
+        else:
+            text_arg = args[0]
+        cache_file = CACHE_DIR / f"{_hash(text_arg)}.json"
+        if cache_file.exists():
+            return json.loads(cache_file.read_text(encoding="utf-8"))
+        result = await func(*args, **kwargs)
+        cache_file.write_text(json.dumps(result), encoding="utf-8")
+        return result
+
+    if asyncio.iscoroutinefunction(func):
+        return async_wrapper  # type: ignore
+    else:
+        return sync_wrapper  # type: ignore
