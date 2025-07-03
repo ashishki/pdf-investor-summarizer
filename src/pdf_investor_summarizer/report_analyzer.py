@@ -83,7 +83,7 @@ class ReportAnalyzer:
         tasks = [self.extractor.aextract(chunk) for chunk in chunks]
         results: List[dict] = await asyncio.gather(*tasks)
 
-        # Попробуем вытащить usage-метрики, если Extractor их возвращает:
+        
         for i, res in enumerate(results):
             logger.info(f"LLM result[{i}]: {res}")
             if "usage" in res:
@@ -104,4 +104,22 @@ class ReportAnalyzer:
         summary = self.merger.merge(results)
         logger.info(f"Final summary: {summary}")
 
-        return summary
+        usage = {
+            "total_prompt_tokens": total_prompt_tokens,
+            "total_completion_tokens": total_completion_tokens,
+            "gpt3.5_estimated_cost": estimate_total_cost(
+                total_prompt_tokens, total_completion_tokens, gpt35_prompt_per_1k, gpt35_completion_per_1k
+            ),
+            "gpt4_estimated_cost": estimate_total_cost(
+                total_prompt_tokens, total_completion_tokens, gpt4_prompt_per_1k, gpt4_completion_per_1k
+            ),
+            "gpt4o_estimated_cost": estimate_total_cost(
+                total_prompt_tokens, total_completion_tokens, gpt4o_prompt_per_1k, gpt4o_completion_per_1k
+            ),
+        }
+
+        return {
+            **summary,
+            "usage": usage
+        }
+
