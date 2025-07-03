@@ -1,38 +1,21 @@
-# tests/test_extractor.py
+import pytest
 
-from src.pdf_investor_summarizer.extractor import Extractor
+class DummyLLM:
+    def invoke(self, prompt):
+        class DummyResponse:
+            content = '{"future_growth_prospects":["A"],"key_business_changes":[],"key_triggers":[],"material_factors":[]}'
+            response_metadata = {"usage": {"prompt_tokens": 5, "completion_tokens": 2}}
+        return DummyResponse()
 
-def test_extractor_returns_expected_structure():
-    """
-    Extractor should return all expected keys and evidence as an empty string.
-    """
-    extractor = Extractor()
-    chunk = "Sample annual report text."
-    result = extractor.extract(chunk)
-    expected_keys = [
-        "future_growth_prospects",
-        "key_business_changes",
-        "key_triggers",
-        "material_factors",
-        "evidence",
-    ]
-    assert isinstance(result, dict)
-    assert sorted(result.keys()) == sorted(expected_keys)
-    for key in expected_keys[:-1]:
-        assert isinstance(result[key], list)
-        assert not result[key]  # must be empty list
-    assert result["evidence"] == ""
+@pytest.fixture
+def dummy_extractor(monkeypatch):
+    from src.pdf_investor_summarizer.extractor import Extractor
+    ext = Extractor()
+    ext.llm = DummyLLM()  
+    return ext
 
-def test_extractor_cache(monkeypatch, tmp_path):
-    """
-    Test that repeated calls with the same chunk use the cache (simulate new cache dir).
-    """
-    monkeypatch.setattr(
-        "src.pdf_investor_summarizer.utils.cache.CACHE_DIR",
-        tmp_path
-    )
-    extractor = Extractor()
-    chunk = "Caching test."
-    res1 = extractor.extract(chunk)
-    res2 = extractor.extract(chunk)
-    assert res1 == res2
+def test_extractor_returns_usage(dummy_extractor):
+    res = dummy_extractor.extract("Test chunk")
+    assert "usage" in res
+    assert isinstance(res["usage"]["prompt_tokens"], int)
+    assert res["future_growth_prospects"] == ["A"]

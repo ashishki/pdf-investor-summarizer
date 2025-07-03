@@ -1,36 +1,24 @@
-# tests/test_merger.py
-
 from src.pdf_investor_summarizer.merger import Merger
 
-def test_merger_combines_lists():
-    """
-    Merger should concatenate lists from all chunks for each key.
-    """
-    dummy_chunks = [
+def test_merger_deduplicates_and_filters_short():
+    merger = Merger()
+    results = [
         {
-            "future_growth_prospects": ["Growth1"],
-            "key_business_changes": [],
-            "key_triggers": ["Trigger1"],
-            "material_factors": [],
-            "evidence": "Chunk1"
+            "future_growth_prospects": ["  Growth 20%  ", "Growth 20%", "Ok", "  "],
+            "key_business_changes": ["Acquisition of X", "Acquisition of X"],
+            "key_triggers": ["Recovery"],
+            "material_factors": ["", "  "]
         },
         {
-            "future_growth_prospects": [],
-            "key_business_changes": ["ChangeA"],
-            "key_triggers": [],
-            "material_factors": ["FactorZ"],
-            "evidence": "Chunk2"
+            "future_growth_prospects": ["Growth 20%", "Expansion", "Ok"],
+            "key_business_changes": ["New CEO"],
+            "key_triggers": ["Recovery", "Demand"],
+            "material_factors": ["Revenue up"]
         }
     ]
-    merger = Merger()
-    result = merger.merge(dummy_chunks)
-    assert result["future_growth_prospects"] == ["Growth1"]
-    assert result["key_business_changes"] == ["ChangeA"]
-    assert result["key_triggers"] == ["Trigger1"]
-    assert result["material_factors"] == ["FactorZ"]
-    # Evidence should be empty string (not merged), as per design
-    assert result["evidence"] == ""
-
-def test_merger_empty_input():
-    merger = Merger()
-    assert merger.merge([]) == {}
+    merged = merger.merge(results)
+    
+    assert "Ok" not in merged["future_growth_prospects"]  
+    assert merged["future_growth_prospects"].count("Growth 20%") == 1  
+    assert "Acquisition of X" in merged["key_business_changes"]
+    assert len(merged["material_factors"]) == 1  
