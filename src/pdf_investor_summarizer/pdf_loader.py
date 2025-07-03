@@ -41,10 +41,16 @@ class PdfLoader:
         elif isinstance(source, str) and source.lower().startswith(("http://", "https://")):
             response = requests.get(source)
             response.raise_for_status()
+            
+            if not response.content.startswith(b"%PDF"):
+                with open("downloaded_gdrive_response.html", "wb") as f:
+                    f.write(response.content)
+                raise ValueError("Downloaded file is not a valid PDF. Saved as downloaded_gdrive_response.html for inspection.")
             tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
             tmp.write(response.content)
             tmp.flush()
             self.pdf_path = Path(tmp.name)
+            
         elif isinstance(source, str) and Path(source).exists():
             self.pdf_path = Path(source)
         else:
