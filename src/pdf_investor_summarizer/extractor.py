@@ -1,25 +1,35 @@
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
-from pdf_investor_summarizer.utils.cache import disk_cache
+from src.pdf_investor_summarizer.utils.cache import disk_cache
+import logging
+logger = logging.getLogger(__name__)
 
 PROMPT_TEMPLATE = """
-You are an expert financial analyst. Your task is to extract only actionable, investor-relevant information from company reports.
+You are a highly accurate and literal financial information extraction agent. 
+Extract only what is explicitly present or strongly implied in the text below. 
+Return a SINGLE valid JSON object with exactly these four fields (do not add or rename fields):
 
-For the following text, return a JSON object with EXACTLY these fields:
-- future_growth_prospects: (list of facts or forecasts)
-- key_business_changes: (list of significant changes)
-- key_triggers: (list of potential catalysts, risks, or opportunities)
-- material_factors: (list of information that may materially affect next year's earnings and growth)
+- future_growth_prospects (list of direct facts or forecasts)
+- key_business_changes (list of explicit business structure/process/strategy changes)
+- key_triggers (list of clearly stated or imminent catalysts, risks, or opportunities)
+- material_factors (list of information that may materially affect next year's earnings and growth)
 
-Respond ONLY with valid, minified JSON (no markdown, no comments, no explanations, no trailing commas).
+STRICT INSTRUCTIONS:
+- Do not invent or infer information that is not directly supported by the text.
+- If a field is not mentioned or there is not enough information, use an empty list for that field.
+- Output must be ONLY a compact valid JSON object (no comments, no explanations, no markdown, no pre/post text, no trailing commas).
+- All extracted facts must be in the same language as in the excerpt.
+- Do NOT paraphrase, do NOT summarize.
+- If you are unsure, prefer to leave the field empty.
+- Return only the JSON object, nothing else.
 
 Example output:
 {{
-  "future_growth_prospects": ["Company plans to expand into Asia in 2025."],
-  "key_business_changes": ["Restructured management team in Q4."],
-  "key_triggers": ["Upcoming product launch in September."],
-  "material_factors": ["Pending litigation over patent dispute."]
+  "future_growth_prospects": [],
+  "key_business_changes": [],
+  "key_triggers": [],
+  "material_factors": []
 }}
 
 Company report excerpt:
@@ -27,6 +37,7 @@ Company report excerpt:
 {chunk}
 <<<END>>>
 """
+
 
 class Extractor:
     """
@@ -76,10 +87,16 @@ class Extractor:
 
     @disk_cache
     async def aextract(self, chunk: str) -> dict:
-        """
-        Async version of extract. Recommended for batch processing.
-        """
+        logger.info(f"LLM prompt for chunk (first 100 chars): {repr(chunk[:100])}")
         prompt = self.prompt.format(chunk=chunk)
+        logger.debug(f"Prompt sent to LLM: {repr(prompt[:500])}")
         response = await self.llm.ainvoke(prompt)
-        return await self.parser.ainvoke(response.content)
+        logger.info(f"LLM raw output: {repr(response.content[:500])}")
+        try:
+            result = await self.parser.ainvoke(response.content)
+            logger.info(f"Parsed result: {result}")
+            return result
+        except Exception as e:
+            logger.error(f"Failed to parse LLM output: {e}\nRaw: {repr(response.content)}")
+            return {"error": str(e), "raw": response.content}
 

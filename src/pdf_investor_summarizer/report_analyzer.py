@@ -1,13 +1,23 @@
 # src/pdf_investor_summarizer/report_analyzer.py
 
+import os
 from pathlib import Path
 from typing import Union, List, Dict, Any
+import asyncio
+import logging
+logger = logging.getLogger(__name__)
 
 from src.pdf_investor_summarizer.pdf_loader import PdfLoader
 from src.pdf_investor_summarizer.text_cleaner import TextCleaner
 from src.pdf_investor_summarizer.chunker import Chunker
 from src.pdf_investor_summarizer.extractor import Extractor
 from src.pdf_investor_summarizer.merger import Merger
+
+from dotenv import load_dotenv
+load_dotenv()
+
+api_key = os.getenv("OPENAI_API_KEY")
+pdf_url = os.getenv("PDF_SOURCE_URL")
 
 class ReportAnalyzer:
     """
@@ -29,28 +39,39 @@ class ReportAnalyzer:
 
     def analyze(self, source: Union[str, Path, bytes]) -> Dict[str, Any]:
         """
-        Run the full extraction pipeline on a PDF source.
-
-        Returns
-        -------
-        dict
-            Summary with all key fields.
+        Synchronous version for backward compatibility.
         """
-        # Step 1: Load pages (strings) from PDF
         pages = PdfLoader(source).load()
-
-        # Step 2: Clean each page
         cleaned_pages = self.cleaner.clean_pages(pages)
-
-        # Step 3: Concatenate cleaned text for chunking
         full_text = "\n".join(cleaned_pages)
-
-        # Step 4: Split into overlapping chunks
         chunks = Chunker(self.chunk_size, self.overlap).split(full_text)
-
-        # Step 5: Extract info from each chunk (with caching)
         results: List[dict] = [self.extractor.extract(chunk) for chunk in chunks]
-
-        # Step 6: Merge all partial results into one summary
         summary = self.merger.merge(results)
+        return summary
+
+    async def analyze_async(self, source: Union[str, Path, bytes]) -> Dict[str, Any]:
+        logger.info(f"PDF loading: {source} (type: {type(source)})")
+        pages = PdfLoader(source).load()
+        logger.info(f"Loaded {len(pages)} pages from PDF.")
+
+        cleaned_pages = self.cleaner.clean_pages(pages)
+        logger.info(f"Cleaned pages. Example [0]: {cleaned_pages[0][:200] if cleaned_pages else '<EMPTY>'}")
+
+        full_text = "\n".join(cleaned_pages)
+        logger.info(f"Full text length after cleaning: {len(full_text)}")
+
+        chunks = Chunker(self.chunk_size, self.overlap).split(full_text)
+        logger.info(f"Chunking complete: {len(chunks)} chunks.")
+        for i, chunk in enumerate(chunks):
+            logger.debug(f"Chunk[{i}] ({len(chunk)} chars): {repr(chunk[:250])}")
+
+        tasks = [self.extractor.aextract(chunk) for chunk in chunks]
+        results: List[dict] = await asyncio.gather(*tasks)
+
+        for i, res in enumerate(results):
+            logger.info(f"LLM result[{i}]: {res}")
+
+        summary = self.merger.merge(results)
+        logger.info(f"Final summary: {summary}")
+
         return summary

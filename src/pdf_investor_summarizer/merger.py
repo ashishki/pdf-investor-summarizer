@@ -1,6 +1,8 @@
 # src/pdf_investor_summarizer/merger.py
 
 from typing import List, Dict, Any
+import logging
+logger = logging.getLogger(__name__)
 
 class Merger:
     """
@@ -22,6 +24,7 @@ class Merger:
         dict
             Merged summary, with lists from all chunks concatenated for each field.
         """
+        logger.info(f"Merging {len(extracted_chunks)} chunk results.")
         if not extracted_chunks:
             return {}
         merged = {key: [] for key in extracted_chunks[0].keys()}
@@ -29,10 +32,5 @@ class Merger:
             for key, value in chunk.items():
                 if isinstance(value, list):
                     merged[key].extend(value)
-                else:
-                    # For fields like "evidence" (if present), just ignore or keep empty
-                    pass
-        # For "evidence", you could collect all evidences if needed
-        if "evidence" in merged:
-            merged["evidence"] = ""  # or optionally join all
+        logger.info(f"Merged summary: {merged}")
         return merged

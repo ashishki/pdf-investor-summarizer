@@ -2,6 +2,8 @@ from pathlib import Path
 from typing import List, Union
 import tempfile
 import requests
+import logging
+logger = logging.getLogger(__name__)
 
 from pdfminer.high_level import extract_text
 from pypdf import PdfReader
@@ -43,29 +45,30 @@ class PdfLoader:
             tmp.write(response.content)
             tmp.flush()
             self.pdf_path = Path(tmp.name)
+        elif isinstance(source, str) and Path(source).exists():
+            self.pdf_path = Path(source)
         else:
             raise ValueError(f"Unsupported source type: {type(source)}")
 
-    def load(self) -> List[str]:
-        """
-        Extracts text from all pages; OCR fallback for pages with no text.
 
-        Returns
-        -------
-        List[str]
-            List of text strings, one per page.
-        """
+    def load(self) -> List[str]:
+        logger.info(f"Extracting text from: {self.pdf_path}")
         reader = PdfReader(str(self.pdf_path))
         num_pages = len(reader.pages)
+        logger.info(f"PDF has {num_pages} pages.")
         texts: List[str] = []
 
         for i in range(num_pages):
             page_text = extract_text(str(self.pdf_path), page_numbers=[i])
             if page_text and page_text.strip():
+                logger.debug(f"Page {i} extracted with text (length={len(page_text)}).")
                 texts.append(page_text)
             else:
+                logger.warning(f"Page {i} is empty, fallback to OCR.")
                 texts.append(self._ocr_page(i + 1))
         return texts
+
+
 
     def _ocr_page(self, page_number: int) -> str:
         """
