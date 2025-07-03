@@ -4,6 +4,8 @@ from typing import List, Dict, Any
 import logging
 logger = logging.getLogger(__name__)
 
+MIN_FACT_LENGTH = 10
+
 class Merger:
     """
     Merges a list of extractor outputs into a single summary JSON.
@@ -32,5 +34,15 @@ class Merger:
             for key, value in chunk.items():
                 if isinstance(value, list):
                     merged[key].extend(value)
-        logger.info(f"Merged summary: {merged}")
+        for key in merged:
+            seen = set()
+            unique_items = []
+            for item in merged[key]:
+                item_stripped = item.strip()
+                if item_stripped and item_stripped not in seen and len(item_stripped) >= MIN_FACT_LENGTH:
+                    unique_items.append(item_stripped)
+                    seen.add(item_stripped)
+            merged[key] = unique_items
+        logger.info(f"Merged summary (deduplicated): {merged}")
         return merged
+        

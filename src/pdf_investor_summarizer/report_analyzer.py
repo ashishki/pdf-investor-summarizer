@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Union, List, Dict, Any
 import asyncio
 import logging
+
 logger = logging.getLogger(__name__)
 
 from src.pdf_investor_summarizer.pdf_loader import PdfLoader
@@ -12,12 +13,21 @@ from src.pdf_investor_summarizer.text_cleaner import TextCleaner
 from src.pdf_investor_summarizer.chunker import Chunker
 from src.pdf_investor_summarizer.extractor import Extractor
 from src.pdf_investor_summarizer.merger import Merger
+from src.pdf_investor_summarizer.utils.cost import count_tokens
 
 from dotenv import load_dotenv
 load_dotenv()
 
 api_key = os.getenv("OPENAI_API_KEY")
 pdf_url = os.getenv("PDF_SOURCE_URL")
+
+
+def estimate_total_cost(prompt_tokens: int, completion_tokens: int, prompt_per_1k: float, completion_per_1k: float) -> float:
+    """
+    Estimate total cost in $ given prompt and completion tokens and prices per 1k tokens.
+    """
+    return (prompt_tokens / 1000) * prompt_per_1k + (completion_tokens / 1000) * completion_per_1k
+
 
 class ReportAnalyzer:
     """
@@ -65,11 +75,31 @@ class ReportAnalyzer:
         for i, chunk in enumerate(chunks):
             logger.debug(f"Chunk[{i}] ({len(chunk)} chars): {repr(chunk[:250])}")
 
+        # ---- TOKEN LOGGING ----
+        total_prompt_tokens = sum(count_tokens(chunk) for chunk in chunks)
+        total_completion_tokens = 0
+        logger.info(f"Total prompt tokens sent: {total_prompt_tokens}")
+
         tasks = [self.extractor.aextract(chunk) for chunk in chunks]
         results: List[dict] = await asyncio.gather(*tasks)
 
+        # Попробуем вытащить usage-метрики, если Extractor их возвращает:
         for i, res in enumerate(results):
             logger.info(f"LLM result[{i}]: {res}")
+            if "usage" in res:
+                usage = res["usage"]
+                total_completion_tokens += usage.get("completion_tokens", 0)
+
+        gpt35_prompt_per_1k = 0.002
+        gpt35_completion_per_1k = 0.002
+        gpt4_prompt_per_1k = 0.03
+        gpt4_completion_per_1k = 0.06
+        gpt4o_prompt_per_1k = 0.005
+        gpt4o_completion_per_1k = 0.015  
+
+        logger.info(f"Estimated cost (gpt-3.5-turbo): ${estimate_total_cost(total_prompt_tokens, total_completion_tokens, gpt35_prompt_per_1k, gpt35_completion_per_1k):.4f}")
+        logger.info(f"Estimated cost (gpt-4): ${estimate_total_cost(total_prompt_tokens, total_completion_tokens, gpt4_prompt_per_1k, gpt4_completion_per_1k):.4f}")
+        logger.info(f"Estimated cost (gpt-4o): ${estimate_total_cost(total_prompt_tokens, total_completion_tokens, gpt4o_prompt_per_1k, gpt4o_completion_per_1k):.4f}")
 
         summary = self.merger.merge(results)
         logger.info(f"Final summary: {summary}")

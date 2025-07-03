@@ -43,6 +43,7 @@ class Extractor:
     """
     Extracts investment-relevant information from a text chunk using an LLM via LangChain.
     Supports both synchronous and asynchronous extraction.
+    Returns both parsed data and token usage (for cost analytics).
     """
 
     def __init__(
@@ -51,22 +52,8 @@ class Extractor:
         temperature: float = 0.1,
         max_tokens: int = 512,
         openai_api_key: str = None,
-        prompt_template: str = PROMPT_TEMPLATE,
+        prompt_template: str = PROMPT_TEMPLATE,  
     ):
-        """
-        Parameters
-        ----------
-        model : str
-            LLM model name.
-        temperature : float
-            Sampling temperature.
-        max_tokens : int
-            Maximum tokens to generate.
-        openai_api_key : str, optional
-            API key (if not set in env).
-        prompt_template : str
-            Prompt text for the LLM.
-        """
         self.llm = ChatOpenAI(
             model=model,
             temperature=temperature,
@@ -78,12 +65,21 @@ class Extractor:
 
     @disk_cache
     def extract(self, chunk: str) -> dict:
-        """
-        Run LLM extraction on chunk, return strict JSON.
-        """
         prompt = self.prompt.format(chunk=chunk)
         response = self.llm.invoke(prompt)
-        return self.parser.invoke(response.content)
+        logger.info(f"Sync LLM raw output: {repr(response.content[:500])}")
+        try:
+            result = self.parser.invoke(response.content)
+        except Exception as e:
+            logger.error(f"Failed to parse LLM output: {e}\nRaw: {repr(response.content)}")
+            return {"error": str(e), "raw": response.content}
+
+        # Попробуй достать usage из response, если есть
+        usage = getattr(response, "response_metadata", {}).get("usage", {})
+        return {
+            **result,
+            "usage": usage
+        }
 
     @disk_cache
     async def aextract(self, chunk: str) -> dict:
@@ -95,8 +91,13 @@ class Extractor:
         try:
             result = await self.parser.ainvoke(response.content)
             logger.info(f"Parsed result: {result}")
-            return result
         except Exception as e:
             logger.error(f"Failed to parse LLM output: {e}\nRaw: {repr(response.content)}")
             return {"error": str(e), "raw": response.content}
 
+        
+        usage = getattr(response, "response_metadata", {}).get("usage", {})
+        return {
+            **result,
+            "usage": usage
+        }
