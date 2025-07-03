@@ -1,0 +1,1 @@
+"""Evidence extraction logic (stub). To be implemented when LLM prompts support evidence tracing."""
